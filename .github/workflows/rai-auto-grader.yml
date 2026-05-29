@@ -1,0 +1,541 @@
+name: RAI Assessment 4 — Auto Grader
+
+on:
+  push:
+    branches: [ main, submission ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  TOTAL_MARKS: 0
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Document Schema Checks (Activity 1, 2, 5)
+  # ─────────────────────────────────────────────────────────────────────────────
+  check-documents:
+    name: "Check Documentation Deliverables"
+    runs-on: ubuntu-latest
+    outputs:
+      doc_score: ${{ steps.score.outputs.doc_score }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check model-card.md exists and has all 6 sections
+        id: model-card
+        run: |
+          FILE="activity-1-model-card/model-card.md"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            echo "✅ model-card.md found"
+            for section in "Purpose" "Inputs" "Outputs" "Known Limitations" "Bias Risks" "Use-Case Restrictions"; do
+              if grep -qi "$section" "$FILE"; then
+                echo "  ✅ Section: $section"
+                SCORE=$((SCORE+1))
+              else
+                echo "  ❌ Missing section: $section"
+              fi
+            done
+          else
+            echo "❌ model-card.md NOT FOUND — 0 marks for Activity 1 schema"
+          fi
+          echo "model_card_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Check risk-checklist.md has 10+ items
+        id: risk-checklist
+        run: |
+          FILE="activity-1-model-card/risk-checklist.md"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            COUNT=$(grep -c "^\- \|^\* \|^[0-9]\." "$FILE" || echo 0)
+            echo "Risk items found: $COUNT"
+            if [ "$COUNT" -ge 10 ]; then
+              echo "✅ 10+ risk items present — 3 marks"
+              SCORE=3
+            else
+              echo "⚠️  Only $COUNT risk items — partial marks"
+              SCORE=1
+            fi
+          else
+            echo "❌ risk-checklist.md NOT FOUND"
+          fi
+          echo "risk_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Check evaluation-log.md has 3 entries with 6 columns
+        id: eval-log
+        run: |
+          FILE="activity-2-governance/evaluation-log.md"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            # Check for table rows (markdown table pipes)
+            ROWS=$(grep -c "^\|" "$FILE" || echo 0)
+            echo "Table rows found: $ROWS"
+            if [ "$ROWS" -ge 5 ]; then  # header + separator + 3 data rows
+              echo "✅ Evaluation log table has sufficient rows — 6 marks"
+              SCORE=6
+            else
+              echo "⚠️  Insufficient rows in evaluation log — partial"
+              SCORE=2
+            fi
+          else
+            echo "❌ evaluation-log.md NOT FOUND"
+          fi
+          echo "eval_log_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Check prompt-registry.md has 3+ versions
+        id: prompt-registry
+        run: |
+          FILE="activity-2-governance/prompt-registry.md"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            VERSIONS=$(grep -ci "v[0-9]\|version" "$FILE" || echo 0)
+            echo "Version entries found: $VERSIONS"
+            if [ "$VERSIONS" -ge 3 ]; then
+              echo "✅ 3+ versions in prompt registry — 4 marks"
+              SCORE=4
+            else
+              echo "⚠️ Fewer than 3 versions found"
+              SCORE=1
+            fi
+          else
+            echo "❌ prompt-registry.md NOT FOUND"
+          fi
+          echo "registry_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Check rai-governance-report.md scorecard table
+        id: scorecard
+        run: |
+          FILE="rai-governance-report.md"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            for dimension in "Accuracy" "Fairness" "Transparency" "Safety" "Accountability"; do
+              if grep -qi "$dimension" "$FILE"; then
+                SCORE=$((SCORE+1))
+                echo "  ✅ Dimension found: $dimension"
+              else
+                echo "  ❌ Missing dimension: $dimension"
+              fi
+            done
+            echo "Scorecard dimension score: $SCORE/5"
+            SCORE=$((SCORE + 2))  # +2 for file existing with content
+          else
+            echo "❌ rai-governance-report.md NOT FOUND"
+          fi
+          echo "scorecard_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Calculate doc score
+        id: score
+        run: |
+          TOTAL=$(( 
+            ${{ steps.model-card.outputs.model_card_score }} + 
+            ${{ steps.risk-checklist.outputs.risk_score }} + 
+            ${{ steps.eval-log.outputs.eval_log_score }} + 
+            ${{ steps.prompt-registry.outputs.registry_score }} + 
+            ${{ steps.scorecard.outputs.scorecard_score }}
+          ))
+          echo "doc_score=$TOTAL" >> $GITHUB_OUTPUT
+          echo "📊 Document checks total: $TOTAL marks"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Promptfoo Validation (Activity 3)
+  # ─────────────────────────────────────────────────────────────────────────────
+  check-promptfoo:
+    name: "Run Promptfoo Test Suite"
+    runs-on: ubuntu-latest
+    outputs:
+      promptfoo_score: ${{ steps.pf-score.outputs.promptfoo_score }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Promptfoo
+        run: npm install -g promptfoo
+
+      - name: Validate promptfoo.yaml exists and has 7 test cases
+        id: yaml-check
+        run: |
+          FILE="activity-3-prompt-injection/promptfoo.yaml"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            echo "✅ promptfoo.yaml found"
+            # Count test cases
+            TEST_COUNT=$(grep -c "^\s*- vars:" "$FILE" || echo 0)
+            echo "Test cases found: $TEST_COUNT"
+            if [ "$TEST_COUNT" -ge 7 ]; then
+              echo "✅ 7+ test cases — 7 marks"
+              SCORE=7
+            else
+              echo "⚠️  Only $TEST_COUNT test cases (need 7) — partial"
+              SCORE=$((TEST_COUNT))
+            fi
+            # Check for not-contains assertions
+            if grep -q "not-contains" "$FILE"; then
+              echo "✅ not-contains assertions present"
+            else
+              echo "⚠️  No not-contains assertions found"
+            fi
+          else
+            echo "❌ promptfoo.yaml NOT FOUND — 0 marks"
+          fi
+          echo "yaml_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Run Promptfoo in CI mode
+        id: pf-run
+        run: |
+          FILE="activity-3-prompt-injection/promptfoo.yaml"
+          if [ -f "$FILE" ]; then
+            cd activity-3-prompt-injection
+            # Run with dummy provider to check config validity
+            promptfoo eval --no-cache --output results.json 2>&1 | tee pf-output.txt || true
+            if [ -f "results.json" ]; then
+              echo "✅ Promptfoo ran and produced results.json"
+              # Check for at least 1 failure (deliberate fail test case)
+              FAILURES=$(python3 -c "import json; d=json.load(open('results.json')); print(sum(1 for r in d.get('results',[]) if not r.get('success',True)))" 2>/dev/null || echo 0)
+              echo "Failures found: $FAILURES"
+              if [ "$FAILURES" -ge 1 ]; then
+                echo "✅ At least 1 deliberate failure present — 4 marks"
+                echo "pf_run_score=4" >> $GITHUB_OUTPUT
+              else
+                echo "⚠️  No failures found — candidate may not have added deliberate fail case"
+                echo "pf_run_score=2" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "⚠️  Results file not generated"
+              echo "pf_run_score=0" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "pf_run_score=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check injection-report.md completeness
+        id: report-check
+        run: |
+          FILE="activity-3-prompt-injection/injection-report.md"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            for level in "Low\|Medium\|High\|Critical"; do
+              if grep -qi "$level" "$FILE"; then
+                echo "✅ Severity ratings found"
+                SCORE=4
+                break
+              fi
+            done
+            # Check for 7 attack entries (numbered or headed)
+            ATTACKS=$(grep -ci "attack\|injection\|prompt" "$FILE" || echo 0)
+            if [ "$ATTACKS" -ge 7 ]; then
+              SCORE=$((SCORE + 4))
+              echo "✅ Sufficient attack documentation"
+            fi
+          else
+            echo "❌ injection-report.md NOT FOUND"
+          fi
+          echo "report_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Calculate Promptfoo score
+        id: pf-score
+        run: |
+          TOTAL=$(( 
+            ${{ steps.yaml-check.outputs.yaml_score }} + 
+            ${{ steps.pf-run.outputs.pf_run_score }} + 
+            ${{ steps.report-check.outputs.report_score }}
+          ))
+          # Cap at 25
+          if [ "$TOTAL" -gt 25 ]; then TOTAL=25; fi
+          echo "promptfoo_score=$TOTAL" >> $GITHUB_OUTPUT
+          echo "📊 Promptfoo checks total: $TOTAL marks"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 3 — Playwright Safety Gate (Activity 4)
+  # ─────────────────────────────────────────────────────────────────────────────
+  check-playwright:
+    name: "Run Playwright Safety Gate"
+    runs-on: ubuntu-latest
+    outputs:
+      playwright_score: ${{ steps.pw-score.outputs.playwright_score }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd activity-4-playwright-safety
+          if [ -f "package.json" ]; then
+            npm install
+          else
+            npm init -y
+            npm install @playwright/test
+            npx playwright install chromium
+          fi
+
+      - name: Check safety-gate.spec.ts exists and has safety checks
+        id: spec-check
+        run: |
+          FILE="activity-4-playwright-safety/safety-gate.spec.ts"
+          SCORE=0
+          if [ -f "$FILE" ]; then
+            echo "✅ safety-gate.spec.ts found — 5 marks"
+            SCORE=5
+            # Check for safety validator import or inline checks
+            if grep -q "validateSafety\|safetyCheck\|safety" "$FILE"; then
+              echo "✅ Safety validation logic referenced"
+            else
+              echo "⚠️  No safety validation found in spec"
+              SCORE=2
+            fi
+          else
+            echo "❌ safety-gate.spec.ts NOT FOUND"
+          fi
+          echo "spec_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Check safety-validator has 3 check categories
+        id: validator-check
+        run: |
+          SCORE=0
+          for file in activity-4-playwright-safety/safety-validator.ts activity-4-playwright-safety/safety-validator.js; do
+            if [ -f "$file" ]; then
+              echo "✅ Safety validator found: $file"
+              CHECKS=0
+              if grep -qi "email\|phone\|pii\|regex" "$file"; then
+                echo "  ✅ PII detection present"
+                CHECKS=$((CHECKS+1))
+              fi
+              if grep -qi "toxic\|blocklist\|keyword\|banned" "$file"; then
+                echo "  ✅ Toxicity filter present"
+                CHECKS=$((CHECKS+1))
+              fi
+              if grep -qi "hallucinat\|fabricat\|product.*check\|known.*brand" "$file"; then
+                echo "  ✅ Hallucination check present"
+                CHECKS=$((CHECKS+1))
+              fi
+              SCORE=$((CHECKS * 3))  # 3 marks per check category, max 9
+              if [ "$SCORE" -gt 10 ]; then SCORE=10; fi
+              break
+            fi
+          done
+          echo "validator_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Run safety validator unit test
+        id: unit-test
+        run: |
+          SCORE=0
+          cd activity-4-playwright-safety
+          if [ -f "package.json" ] && grep -q '"test"' package.json; then
+            npm test 2>&1 | tee test-output.txt || true
+            if grep -q "passed\|PASS" test-output.txt; then
+              echo "✅ Unit tests passed — 5 marks"
+              SCORE=5
+            else
+              echo "⚠️  Unit tests did not pass"
+              SCORE=0
+            fi
+          else
+            echo "⚠️  No test script in package.json"
+          fi
+          echo "unit_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Check JSON output log exists
+        id: log-check
+        run: |
+          SCORE=0
+          for logfile in activity-4-playwright-safety/safety-output.json activity-4-playwright-safety/results.json; do
+            if [ -f "$logfile" ]; then
+              echo "✅ JSON output log found: $logfile — 5 marks"
+              SCORE=5
+              break
+            fi
+          done
+          if [ "$SCORE" -eq 0 ]; then
+            echo "❌ No JSON output log found"
+          fi
+          echo "log_score=$SCORE" >> $GITHUB_OUTPUT
+
+      - name: Calculate Playwright score
+        id: pw-score
+        run: |
+          TOTAL=$(( 
+            ${{ steps.spec-check.outputs.spec_score }} + 
+            ${{ steps.validator-check.outputs.validator_score }} + 
+            ${{ steps.unit-test.outputs.unit_score }} + 
+            ${{ steps.log-check.outputs.log_score }}
+          ))
+          if [ "$TOTAL" -gt 25 ]; then TOTAL=25; fi
+          echo "playwright_score=$TOTAL" >> $GITHUB_OUTPUT
+          echo "📊 Playwright checks total: $TOTAL marks"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 4 — Claude API Rubric Grading (Qualitative)
+  # ─────────────────────────────────────────────────────────────────────────────
+  claude-rubric-grading:
+    name: "Claude API Qualitative Grading"
+    runs-on: ubuntu-latest
+    needs: [check-documents, check-promptfoo, check-playwright]
+    outputs:
+      rubric_score: ${{ steps.rubric.outputs.rubric_score }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Grade qualitative deliverables via Claude API
+        id: rubric
+        run: |
+          SCORE=0
+
+          # Read model card bias section
+          if [ -f "activity-1-model-card/model-card.md" ]; then
+            BIAS_CONTENT=$(grep -A5 -i "bias" activity-1-model-card/model-card.md | head -20)
+            
+            RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+              -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+              -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d "{
+                \"model\": \"claude-sonnet-4-20250514\",
+                \"max_tokens\": 100,
+                \"messages\": [{
+                  \"role\": \"user\",
+                  \"content\": \"Score this bias risk section from a Model Card 1-4 (4=specific named risks, 1=generic/vague). Reply with ONLY a number. Section: $BIAS_CONTENT\"
+                }]
+              }")
+            
+            BIAS_SCORE=$(echo $RESPONSE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['content'][0]['text'].strip())" 2>/dev/null || echo 2)
+            echo "Bias section score: $BIAS_SCORE"
+            SCORE=$((SCORE + BIAS_SCORE))
+          fi
+
+          # Grade injection analysis quality
+          if [ -f "activity-3-prompt-injection/injection-report.md" ]; then
+            ANALYSIS=$(head -50 activity-3-prompt-injection/injection-report.md)
+            
+            RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+              -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+              -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d "{
+                \"model\": \"claude-sonnet-4-20250514\",
+                \"max_tokens\": 100,
+                \"messages\": [{
+                  \"role\": \"user\",
+                  \"content\": \"Score this prompt injection analysis 1-6 (6=clear reasoning about WHY each attack succeeded/failed, 1=just lists results with no analysis). Reply with ONLY a number. Content: $ANALYSIS\"
+                }]
+              }")
+            
+            INJECT_SCORE=$(echo $RESPONSE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['content'][0]['text'].strip())" 2>/dev/null || echo 2)
+            echo "Injection analysis score: $INJECT_SCORE"
+            SCORE=$((SCORE + INJECT_SCORE))
+          fi
+
+          # Grade RAI scorecard improvement actions
+          if [ -f "rai-governance-report.md" ]; then
+            ACTIONS=$(grep -i "improvement\|action\|recommend" rai-governance-report.md | head -20)
+            
+            RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+              -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+              -H "anthropic-version: 2023-06-01" \
+              -H "content-type: application/json" \
+              -d "{
+                \"model\": \"claude-sonnet-4-20250514\",
+                \"max_tokens\": 100,
+                \"messages\": [{
+                  \"role\": \"user\",
+                  \"content\": \"Score these RAI improvement actions 1-5 (5=specific actionable steps, 1=vague generic statements). Reply ONLY with a number. Actions: $ACTIONS\"
+                }]
+              }")
+            
+            ACTION_SCORE=$(echo $RESPONSE | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['content'][0]['text'].strip())" 2>/dev/null || echo 2)
+            echo "Improvement actions score: $ACTION_SCORE"
+            SCORE=$((SCORE + ACTION_SCORE))
+          fi
+
+          if [ "$SCORE" -gt 15 ]; then SCORE=15; fi
+          echo "rubric_score=$SCORE" >> $GITHUB_OUTPUT
+          echo "📊 Claude rubric grading total: $SCORE marks"
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 5 — Final Score Report
+  # ─────────────────────────────────────────────────────────────────────────────
+  generate-scorecard:
+    name: "Generate Final Scorecard"
+    runs-on: ubuntu-latest
+    needs: [check-documents, check-promptfoo, check-playwright, claude-rubric-grading]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calculate and write final scorecard
+        run: |
+          DOC_SCORE=${{ needs.check-documents.outputs.doc_score }}
+          PF_SCORE=${{ needs.check-promptfoo.outputs.promptfoo_score }}
+          PW_SCORE=${{ needs.check-playwright.outputs.playwright_score }}
+          RUBRIC_SCORE=${{ needs.claude-rubric-grading.outputs.rubric_score }}
+          
+          TOTAL=$((DOC_SCORE + PF_SCORE + PW_SCORE + RUBRIC_SCORE))
+          if [ "$TOTAL" -gt 100 ]; then TOTAL=100; fi
+
+          # Grade boundary
+          if [ "$TOTAL" -ge 85 ]; then GRADE="Distinction"
+          elif [ "$TOTAL" -ge 70 ]; then GRADE="Merit"
+          elif [ "$TOTAL" -ge 50 ]; then GRADE="Pass"
+          else GRADE="Refer"
+          fi
+
+          cat > auto-grade-result.json << EOF
+          {
+            "candidate": "${{ github.actor }}",
+            "repository": "${{ github.repository }}",
+            "commit": "${{ github.sha }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "scores": {
+              "activity_1_model_card": "included in doc_score",
+              "activity_2_governance": "included in doc_score",
+              "doc_checks_total": $DOC_SCORE,
+              "activity_3_promptfoo": $PF_SCORE,
+              "activity_4_playwright": $PW_SCORE,
+              "qualitative_rubric": $RUBRIC_SCORE,
+              "total": $TOTAL
+            },
+            "grade": "$GRADE",
+            "pass": $([ $TOTAL -ge 50 ] && echo true || echo false)
+          }
+          EOF
+
+          cat auto-grade-result.json
+          echo ""
+          echo "════════════════════════════════════"
+          echo "  FINAL SCORE: $TOTAL / 100 — $GRADE"
+          echo "════════════════════════════════════"
+
+      - name: Commit scorecard back to repo
+        run: |
+          git config user.name "RAI Auto-Grader"
+          git config user.email "grader@assessment.ai"
+          git add auto-grade-result.json
+          git commit -m "🤖 Auto-grade result: $(cat auto-grade-result.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print(str(d['scores']['total'])+'/100 — '+d['grade'])\")" || echo "No changes to commit"
+          git push || echo "Push skipped"
+
+      - name: Fail workflow if candidate did not pass
+        run: |
+          TOTAL=$((
+            ${{ needs.check-documents.outputs.doc_score }} +
+            ${{ needs.check-promptfoo.outputs.promptfoo_score }} +
+            ${{ needs.check-playwright.outputs.playwright_score }} +
+            ${{ needs.claude-rubric-grading.outputs.rubric_score }}
+          ))
+          if [ "$TOTAL" -lt 50 ]; then
+            echo "❌ Assessment not passed (score: $TOTAL/100)"
+            exit 1
+          else
+            echo "✅ Assessment passed (score: $TOTAL/100)"
+          fi

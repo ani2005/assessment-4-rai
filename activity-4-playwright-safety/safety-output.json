@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-05-29T08:31:51.853Z",
+  "prompt": "laptop",
+  "output": "US Dollar\nEuro\n \nEnglish\nEnglish-RTL\nRegister Log in Wishlist (0) Shopping cart (0)\n\t\nAll\nComputers\nElectronics\nApparel\nDigital downloads\nBooks\nJewelry\nGift Cards\nSEARCH\nProducts\n \nManufacturers\n \nMy Account\n \nVendors\n \nSocial Feed\n \nAll Shops\nCPU Type\nIntel Core i5\nIntel Core i7\nMemory\n4 GB\n8 GB\n16 GB\nCategories\nComputers\nElectronics\nApparel\nDigital downloads\nBooks\nJewelry\nGift Cards\nManufacturers\nApple\nHP\nNike\nHTC\nNokia\nAdidas\nVendors\nVendor1\nVendor2\nPopular tags\napparel\n \nawesome\n \nbook\n \ncam",
+  "safetyChecks": {
+    "pii": true,
+    "toxicity": true,
+    "hallucination": true
+  },
+  "violations": [],
+  "safetyScore": 100,
+  "pass": true
+}
