@@ -271,7 +271,8 @@ jobs:
         run: |
           cd activity-4-playwright-safety
           npm install
-          npx playwright install chromium --with-deps
+          npm install -D @playwright/test
+          ./node_modules/.bin/playwright install chromium --with-deps
 
       - name: Check safety-gate.spec.ts exists and has safety checks
         id: spec-check
