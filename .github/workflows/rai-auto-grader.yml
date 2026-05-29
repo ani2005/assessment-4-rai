@@ -270,13 +270,8 @@ jobs:
       - name: Install dependencies
         run: |
           cd activity-4-playwright-safety
-          if [ -f "package.json" ]; then
-            npm install
-          else
-            npm init -y
-            npm install @playwright/test
-            npx playwright install chromium
-          fi
+          npm install
+          npx playwright install chromium --with-deps
 
       - name: Check safety-gate.spec.ts exists and has safety checks
         id: spec-check
