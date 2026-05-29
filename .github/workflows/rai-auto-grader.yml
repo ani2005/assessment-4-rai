@@ -522,7 +522,8 @@ jobs:
           git config user.name "RAI Auto-Grader"
           git config user.email "grader@assessment.ai"
           git add auto-grade-result.json
-          git commit -m "🤖 Auto-grade result: $(cat auto-grade-result.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print(str(d['scores']['total'])+'/100 — '+d['grade'])\")" || echo "No changes to commit"
+          SCORE=$(python3 -c "import json; d=json.load(open('auto-grade-result.json')); print(str(d['scores']['total'])+'/100')")
+          git commit -m "Auto-grade result: $SCORE" || echo "No changes to commit"
           git push || echo "Push skipped"
 
       - name: Fail workflow if candidate did not pass
